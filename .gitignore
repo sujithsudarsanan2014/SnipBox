@@ -1,6 +1,6 @@
 # # Ignore migrations but keep the actual migration files
-# migrations/
-# !migrations/__init__.py
+migrations/
+!migrations/__init__.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
