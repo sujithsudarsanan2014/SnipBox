@@ -66,8 +66,6 @@ class TagListAPI(viewsets.ModelViewSet):
                 response_data = generate_api_response(
                     False, [], "No data found")
             return Response(response_data, status=200)
-
-            return Response(serializer.data)
         except Exception as error:
             response_data = generate_api_response(
                 False, [], f"An error occurred: {str(error)}")
@@ -103,3 +101,25 @@ class SnippetCreateAPIView(APIView):
             }, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class DeleteSnippetAPI(APIView):
+    """
+    API view to delete a selected snippet and return rest of the snippets
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            snippet_id=request.data.get("snippet_id","")
+            snippet = Snippet.objects.get(id=snippet_id, created_by=request.user)
+            if snippet:
+                snippet.delete()
+                # Return the updated list of snippets
+                remaining_snippets = Snippet.objects.filter(created_by=request.user)
+                serializer = SnippetSerializer(remaining_snippets, many=True)
+                response_data = generate_api_response(True, serializer.data, "Given snippet deleted")
+                return Response(response_data, status=200)
+        except Exception as error:
+            response_data = generate_api_response(
+                False, [], f"An error occurred: {str(error)}")
+            return Response(response_data, status=500)

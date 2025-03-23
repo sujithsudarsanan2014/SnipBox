@@ -27,11 +27,11 @@ class TagSerializer(serializers.ModelSerializer):
 
 # Snippet serializer
 class SnippetSerializer(serializers.ModelSerializer):
-    tags = TagSerializer(many=True)   
+    tag = TagSerializer(many=True)   
     
     class Meta:
         model = Snippet
-        fields = ['id', 'title', 'note', 'created_at', 'updated_at', 'tags']
+        fields = ['id', 'title', 'note', 'created_at', 'updated_at', 'tag']
 
     def create(self, validated_data):
         tags_data = validated_data.pop('tags', [])
