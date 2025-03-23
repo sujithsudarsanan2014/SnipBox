@@ -9,4 +9,5 @@ urlpatterns = [
     path('delete-snippet/', DeleteSnippetAPI.as_view(), name='delete-snippet-api'),
     path('detail/<int:snippet_id>/', DetailSnippetAPI.as_view(), name='snippet-details-api'),
     path('update/<int:snippet_id>/', UpdateSnippetAPI.as_view(), name='update-snippet-api'),
+    path('filter-tags/', FilterByTagAPI.as_view(), name='filter-tags-api'),
 ]

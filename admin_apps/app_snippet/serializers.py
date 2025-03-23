@@ -24,48 +24,88 @@ class UserSerializer(serializers.ModelSerializer):
 class TagSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tag
-        fields = ['title']
+        fields = ['title',]
 
+# Snippet list serializer with links
 class SnippetSerializerListWithLinks(serializers.ModelSerializer):
-    tag = TagSerializer(many=True)   
     detail_url = serializers.SerializerMethodField()
+    created_by = serializers.SerializerMethodField()
 
     def get_detail_url(self, obj):
         return settings.BASE_URL+'api/snippet/detail/'+str(obj.id)+'/'
 
+    def get_created_by(self, obj):
+        return obj.created_by.username
+
     class Meta:
         model = Snippet
-        fields = ['id', 'title','tag','detail_url']
+        fields = ['id', 'title','detail_url','created_by']
 
-# Snippet serializer
+# Snippet list serializer
 class SnippetSerializer(serializers.ModelSerializer):
-    tag = TagSerializer(many=True)   
-
+    tag = serializers.ListField(child=serializers.CharField(max_length=100))
     class Meta:
         model = Snippet
         fields = ['id', 'title', 'note', 'created_at', 'updated_at', 'tag']
 
+    def list(self, validated_data):
+        tags_data = validated_data.pop('tag', [])
+        snippet = Snippet.objects.create(**validated_data)
+
+        tag_objects = []
+        for tag_data in tags_data:
+            tag = Tag.objects.filter(title=tag_data).first()
+            if not tag:
+                tag = Tag.objects.create(title=tag_data)
+            tag_objects.append(tag)
+
+        snippet.tag.set(tag_objects)
+
+        return snippet
+
+
     def create(self, validated_data):
         tags_data = validated_data.pop('tag', [])
         snippet = Snippet.objects.create(**validated_data)
+
+        tag_objects = []
         for tag_data in tags_data:
-            tag = Tag.objects.get_or_create(title=tag_data['title'])
-            snippet.tags.add(tag)
-        
+            tag = Tag.objects.filter(title=tag_data).first()
+            if not tag:
+                tag = Tag.objects.create(title=tag_data)
+            tag_objects.append(tag)
+
+        snippet.tag.set(tag_objects) 
+
         return snippet
 
-    # def update(self, instance, validated_data):
-    #     tags_data = validated_data.pop('tags', [])
+    def update(self, instance, validated_data):
+        tags_data = validated_data.pop('tag', [])
         
-    #     # Update Snippet fields
-    #     instance.title = validated_data.get('title', instance.title)
-    #     instance.note = validated_data.get('note', instance.note)
-    #     instance.save()
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        tag_objects = []
+        for tag_data in tags_data:
+            tag = Tag.objects.filter(title=tag_data).first()
+            if not tag:
+                tag = Tag.objects.create(title=tag_data)
+            tag_objects.append(tag)
+        
+        instance.tag.set(tag_objects)
+        
+        instance.save()
+        
+        return instance
 
-    #     # Update tags
-    #     instance.tags.clear()  # Clear old tags
-    #     for tag_data in tags_data:
-    #         tag, created = Tag.objects.get_or_create(title=tag_data['title'])
-    #         instance.tags.add(tag)
+# Snippet details serializer
+class SnippetSerializerDetail(serializers.ModelSerializer):
+    tag = serializers.SerializerMethodField()
 
-    #     return instance
+    def get_tag(self, obj):
+        tag_urls = [str(tag.title) for tag in obj.tag.all()]
+        return tag_urls
+
+    class Meta:
+        model = Snippet
+        fields = ['id','note','title','tag']

@@ -9,7 +9,7 @@ from .models import *
 from .serializers import *
 
 def generate_api_response(success, data, message):
-    return {"success": success, "message": message, "data": data, }
+    return {"status": success, "message": message, "data": data, }
 
 class CreateUserAPI(APIView):
     """
@@ -40,14 +40,14 @@ class OverviewAPI(APIView):
 
     def get(self, request):
         try:
-            total_snippets = Snippet.objects.filter(created_by=request.user).count()
-            snippets = Snippet.objects.filter(created_by=request.user)
+            total_snippets = Snippet.objects.filter().count()
+            snippets = Snippet.objects.all()
             snippet_serializer = SnippetSerializerListWithLinks(snippets, many=True)
             if snippets:
                 serializer = SnippetSerializerListWithLinks(snippets, many=True)
                 data = {
                 "total_count": total_snippets,
-                "snippets": snippet_serializer.data
+                "snippets": snippet_serializer.data,
                 }
                 response_data=generate_api_response(True, data, "successfully retrieved snippet list with links")
             else:
@@ -59,6 +59,9 @@ class OverviewAPI(APIView):
         
 
 class DetailSnippetAPI(APIView):
+    """
+    API for snippet details
+    """
     permission_classes = [IsAuthenticated]
     serializer_class = SnippetSerializer
 
@@ -66,7 +69,7 @@ class DetailSnippetAPI(APIView):
         try:
             snippet = Snippet.objects.filter(id=snippet_id, created_by=request.user)
             if snippet:
-                serializer = SnippetSerializer(snippet, many=True)
+                serializer = SnippetSerializerDetail(snippet, many=True)
                 response_data=generate_api_response(True, serializer.data, "successfully retrieved snippet details")
             else:
                 response_data = generate_api_response(False, [], "No data found")
@@ -99,71 +102,109 @@ class TagListAPI(viewsets.ModelViewSet):
 
 class SnippetCreateAPIView(APIView):
     """
-    API view to create a new snippet with tags.
+    API to create a new snippet with tags.
     """
     permission_classes = [IsAuthenticated] 
     serializer_class = SnippetSerializer
 
     def post(self, request):
-        serializer = SnippetSerializer(data=request.data)
-        print("on post")
-        if serializer.is_valid():
-            # Add the current user to the validated data
-            validated_data = serializer.validated_data
-            validated_data['created_by'] = request.user
-            
-            # Create the Snippet
-            snippet = serializer.create(validated_data)
-
-            return Response({
-                'message': 'Snippet created successfully.',
-                'snippet': {
+        try:
+            serializer = SnippetSerializer(data=request.data)
+            if serializer.is_valid():
+                # Add the current user to the validated data
+                validated_data = serializer.validated_data
+                validated_data['created_by'] = request.user
+                
+                # Create the Snippet
+                snippet = serializer.create(validated_data)
+                tag_titles = [tag.title for tag in snippet.tag.all()]
+                datresponse={
                     'title': snippet.title,
                     'note': snippet.note,
                     'created_at': snippet.created_at,
                     'updated_at': snippet.updated_at,
-                    'tag':[tag.title for tag in snippet.tag.all()]
+                    'tag':tag_titles
                 }
-            }, status=status.HTTP_201_CREATED)
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                response_data = generate_api_response(True, datresponse, "successfully created the snippet")
+                return Response(response_data, status=200)
+            else:
+                response_data = generate_api_response(False, [], "No data found")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as error:
+            response_data = generate_api_response(False, [], f"An error occurred: {str(error)}")
+            return Response(response_data, status=500)
 
 class DeleteSnippetAPI(APIView):
     """
-    API view to delete a selected snippet and return rest of the snippets
+    API to delete a selected snippet and return rest of the snippets
     """
     permission_classes = [IsAuthenticated]
+    serializer_class = SnippetSerializer
 
     def post(self, request):
         try:
             snippet_id=request.data.get("snippet_id","")
-            snippet = Snippet.objects.get(id=snippet_id, created_by=request.user)
+            snippet = Snippet.objects.filter(id=snippet_id, created_by=request.user)
             if snippet:
                 snippet.delete()
                 # Return the updated list of snippets
                 remaining_snippets = Snippet.objects.filter(created_by=request.user)
-                serializer = SnippetSerializer(remaining_snippets, many=True)
-                response_data = generate_api_response(True, serializer.data, "Given snippet deleted")
+                serializer = SnippetSerializerDetail(remaining_snippets, many=True)
+                response_data = generate_api_response(True, serializer.data, "Given snippet is deleted")
                 return Response(response_data, status=200)
+            else:
+                response_data = generate_api_response(False, [], "Snippet id is not found")
+                return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
         except Exception as error:
-            response_data = generate_api_response(
-                False, [], f"An error occurred: {str(error)}")
+            response_data = generate_api_response(False, [], f"An error occurred: {str(error)}")
             return Response(response_data, status=500)
 
 class UpdateSnippetAPI(APIView):
+    """
+    API to update a snippet
+    """
     permission_classes = [IsAuthenticated]
 
     def put(self, request, snippet_id):
         try:
-            snippet = Snippet.objects.get(id=snippet_id, created_by=request.user)
+            snippet = Snippet.objects.filter(id=snippet_id)
             if snippet:
-                serializer = SnippetSerializer(snippet, data=request.data, partial=True)
+                serializer = SnippetSerializerDetail(snippet[0], data=request.data, partial=True)
                 if serializer.is_valid():
                     serializer.save()
                 response_data = generate_api_response(True, serializer.data, "Given snippet data updated")
                 return Response(response_data, status=200)
             else:
                 response_data = generate_api_response(False, [], "No data found")
+                return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as error:
+            response_data = generate_api_response(
+                False, [], f"An error occurred: {str(error)}")
+
+class FilterByTagAPI(APIView):
+    """
+    API to list snippets by selected tag
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = SnippetSerializerDetail
+
+    def post(self, request):
+        try:
+            tag=request.data.get('tag','')
+            tagitem=Tag.objects.filter(title=request.data.get('tag',''))
+            if tagitem:
+                snippet = Snippet.objects.filter(tag=tagitem[0], created_by=request.user)
+                if snippet:
+                    snippet_serializer = SnippetSerializerDetail(snippet, many=True)
+                    response_data = generate_api_response(True, snippet_serializer.data, "Snippet list for given tag")
+                    return Response(response_data, status=200)
+                else:
+                    response_data = generate_api_response(False, [], "No snippets available")
+                    return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                response_data = generate_api_response(False, [], "No tag available")
+                return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
         except Exception as error:
             response_data = generate_api_response(
                 False, [], f"An error occurred: {str(error)}")
